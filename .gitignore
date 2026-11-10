@@ -1,0 +1,19 @@
+# Decoded / patching workspace (not needed for the OTA repo)
+moviebox_decoded/
+moviebox_original_decoded/
+
+# Local tools & signing secrets
+apktool.jar
+debug.keystore
+*.keystore
+*.jks
+
+# Build artifacts
+moviebox-v2.1.2.apk
+moviebox_patched_unsigned.apk
+moviebox_patched_aligned.apk
+moviebox_patched_signed.apk
+*.idsig
+*.part
+
+# The file that gets released (moviebox.apk) is intentionally NOT ignored.

@@ -1,0 +1,117 @@
+name: Deploy MovieBox Update
+
+# Publishes a new OTA update for the installed app.
+# The app (updater-src/UpdateChecker.smali) polls:
+#   https://raw.githubusercontent.com/frost-bit-star/mvbox/main/update.json
+# and downloads the APK from:
+#   https://github.com/frost-bit-star/mvbox/releases/latest/download/moviebox.apk
+#
+# IMPORTANT: every release must be signed with the SAME key as the currently
+# installed app, otherwise Android refuses to install it as an update.
+# The versionCode MUST be higher than the previous one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      changelog:
+        description: "Changelog shown in the in-app update dialog"
+        required: false
+        default: "• Bug fixes and improvements"
+      message:
+        description: "Dialog message"
+        required: false
+        default: "A new version of MovieBox is available."
+      force:
+        description: "Force the update (no Later button)"
+        type: boolean
+        default: false
+  push:
+    paths:
+      - "moviebox.apk"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-update
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android build-tools
+        uses: android-actions/setup-android@v3
+
+      - name: Read version from APK
+        id: ver
+        run: |
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          DUMP=$("$BT/aapt" dump badging moviebox.apk)
+          CODE=$(echo "$DUMP" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" | head -1)
+          NAME=$(echo "$DUMP" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+          if [ -z "$CODE" ] || [ -z "$NAME" ]; then
+            echo "::error::Could not read versionCode/versionName from moviebox.apk"
+            exit 1
+          fi
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Detected versionCode=$CODE versionName=$NAME"
+
+      - name: Verify version is newer
+        run: |
+          PREV=$(jq -r '.versionCode // 0' update.json 2>/dev/null || echo 0)
+          NEW='${{ steps.ver.outputs.code }}'
+          echo "previous=$PREV new=$NEW"
+          if [ "$NEW" -le "$PREV" ]; then
+            echo "::error::versionCode ($NEW) must be greater than the previous update ($PREV). Rebuild the APK with a higher versionCode."
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.name }}
+          name: MovieBox ${{ steps.ver.outputs.name }}
+          body: ${{ inputs.changelog || '• Bug fixes and improvements' }}
+          files: moviebox.apk
+          make_latest: true
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update update.json
+        env:
+          VERSION_CODE: ${{ steps.ver.outputs.code }}
+          VERSION_NAME: ${{ steps.ver.outputs.name }}
+          CHANGELOG: ${{ inputs.changelog || '• Bug fixes and improvements' }}
+          MESSAGE: ${{ inputs.message || 'A new version of MovieBox is available.' }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          jq -n \
+            --argjson versionCode "$VERSION_CODE" \
+            --arg versionName "$VERSION_NAME" \
+            --arg apkUrl "https://github.com/frost-bit-star/mvbox/releases/latest/download/moviebox.apk" \
+            --arg title "frostbitstar" \
+            --arg message "$MESSAGE" \
+            --arg changelog "$CHANGELOG" \
+            --argjson force "$FORCE" \
+            '{versionCode:$versionCode, versionName:$versionName, apkUrl:$apkUrl, title:$title, message:$message, changelog:$changelog, force:$force}' \
+            > update.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add update.json
+          git commit -m "release: $VERSION_NAME ($VERSION_CODE)" || echo "no change"
+          git push

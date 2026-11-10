@@ -1,0 +1,9 @@
+{
+  "versionCode": 50020133,
+  "versionName": "4.0.02.0903.04",
+  "apkUrl": "https://github.com/frost-bit-star/mvbox/releases/latest/download/moviebox.apk",
+  "title": "frostbitstar",
+  "message": "A new version of MovieBox is available.",
+  "changelog": "\u2022 Bug fixes and improvements",
+  "force": false
+}
