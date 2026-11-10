@@ -84,9 +84,11 @@ jobs:
           PREV=$(jq -r '.versionCode // 0' update.json 2>/dev/null || echo 0)
           NEW='${{ steps.ver.outputs.code }}'
           echo "previous=$PREV new=$NEW"
-          if [ "$NEW" -le "$PREV" ]; then
-            echo "::error::versionCode ($NEW) must be greater than the previous update ($PREV). Rebuild the APK with a higher versionCode."
+          if [ "$NEW" -lt "$PREV" ]; then
+            echo "::error::versionCode ($NEW) is lower than the previous update ($PREV). Rebuild the APK with a higher versionCode."
             exit 1
+          elif [ "$NEW" -eq "$PREV" ]; then
+            echo "::warning::versionCode is unchanged ($NEW). Users already on this version will NOT see an update. Bump versionCode for the next release."
           fi
 
       - name: Create GitHub Release
